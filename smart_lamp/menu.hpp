@@ -3,7 +3,6 @@ class Setting
 private:
   int screens_count = 5;    // Lamp / Point / Color / Torch / Ambient
   int lines_count[5] = {1, 2, 3, 0, 1};
-  bool drawing_required = true;
   
 public:
   int screen = 0;
@@ -22,24 +21,21 @@ public:
 
   Setting();
 
-  int nextLine();
-  int nextScreen();
-  int previousScreen();
+  bool nextLine();
+  bool nextScreen();
+  bool previousScreen();
 
-  int brightnessUp();
-  int brightnessDown();
+  bool brightnessUp();
+  bool brightnessDown();
 
-  int warmthUp();
-  int warmthDown();
+  bool warmthUp();
+  bool warmthDown();
 
-  int positionUp();
-  int positionDown();
+  bool positionUp();
+  bool positionDown();
 
-  int colorUp(int color);
-  int colorDown(int color);
-
-  bool drawingRequred();
-  bool drawed();
+  bool colorUp(int color);
+  bool colorDown(int color);
   
   ~Setting();
 };
@@ -53,139 +49,114 @@ Setting::~Setting()
 {}
 
 
-int Setting::nextLine()
+bool Setting::nextLine()
 {
   int last = this -> line;
   
   if ((this -> lines_count)[this -> screen])
     this -> line = (this -> line + 1) % (this -> lines_count)[this -> screen];
-
-  if (this -> line != last)
-    this -> drawing_required = true;
     
-  return this -> line;
+  return (this -> line != last);
 }
 
 
-int Setting::nextScreen()
+bool Setting::nextScreen()
 {  
   this -> screen = (this -> screen + 1) % this -> screens_count;
 
   this -> line = 0;
-
-  this -> drawing_required = true;
   
-  return this -> screen;
+  return true;
 }
 
 
-int Setting::previousScreen()
+bool Setting::previousScreen()
 {
   if (this -> screen)
     this -> screen -= 1;
   else
     this -> screen = this -> screens_count - 1;
 
-  this -> drawing_required = true;
-
   this -> line = 0;
     
-  return this -> screen;
+  return true;
 }
 
 
-bool Setting::drawingRequred()
-{
-  return this -> drawing_required;
-}
-
-bool Setting::drawed()
-{
-  this -> drawing_required = false;
-  return 0;
-}
-
-
-int Setting::brightnessUp()
+bool Setting::brightnessUp()
 {
   if (this -> brightness < 100)
   {
-    this -> drawing_required = true;
     (this -> brightness) += 5;
-    return 5;
+    return true;
   }
   else
-    return 0;
+    return false;
 }
 
 
-int Setting::brightnessDown()
+bool Setting::brightnessDown()
 {
   if (this -> brightness > 0)
   {
-    this -> drawing_required = true;
     (this -> brightness) -= 5;
-    return -5;
+    return true;
   }
   else
-    return 0;
+    return false;
 }
 
 
-int Setting::warmthUp()
+bool Setting::warmthUp()
 {
   if (this -> warmth < 100)
   {
-    this -> drawing_required = true;
     (this -> warmth) += 5;
-    return 5;
+    return true;
   }
   else
-    return 0;
+    return false;
 }
 
 
-int Setting::warmthDown()
+bool Setting::warmthDown()
 {
   if (this -> warmth > -100)
   {
-    this -> drawing_required = true;
     (this -> warmth) -= 5;
-    return -5;
+    return true;
   }
   else
-    return 0;
+    return false;
 }
 
 
-int Setting::positionUp()
+bool Setting::positionUp()
 {
   if (this -> spotlight_position < 50)
   {
-    this -> drawing_required = true;
     (this -> spotlight_position) += 5;
-    return 5;
+    return true;
   }
   else
-    return 0;
+    return false;
 }
 
 
-int Setting::positionDown()
+bool Setting::positionDown()
 {
   if (this -> spotlight_position > -50)
   {
-    this -> drawing_required = true;
     (this -> spotlight_position) -= 5;
-    return -5;
+    return true;
   }
   else
-    return 0;
+    return false;
 }
 
 
 
-int Setting::colorUp(int color)
+bool Setting::colorUp(int color)
 {
   switch(color)
   {
@@ -193,42 +164,39 @@ int Setting::colorUp(int color)
     {
       if (this -> red < 255)
       {
-        this -> drawing_required = true;
         (this -> red) += 15;
-        return 15;
+        return true;
       }
       else
-        return 0;
+        return false;
     }
 
     case(1):
     {
       if (this -> green < 255)
       {
-        this -> drawing_required = true;
         (this -> green) += 15;
-        return 15;
+        return true;
       }
       else
-        return 0;
+        return false;
     }
 
     case(2):
     {
       if (this -> blue < 255)
       {
-        this -> drawing_required = true;
         (this -> blue) += 15;
-        return 15;
+        return true;
       }
       else
-        return 0;
+        return false;
     }
   }
 }
 
 
-int Setting::colorDown(int color)
+bool Setting::colorDown(int color)
 {
   switch(color)
   {
@@ -236,36 +204,33 @@ int Setting::colorDown(int color)
     {
       if (this -> red > 0)
       {
-        this -> drawing_required = true;
         (this -> red) -= 15;
-        return -15;
+        return true;
       }
       else
-        return 0;
+        return false;
     }
 
     case(1):
     {
       if (this -> green > 0)
       {
-        this -> drawing_required = true;
         (this -> green) -= 15;
-        return -15;
+        return true;
       }
       else
-        return 0;
+        return false;
     }
 
     case(2):
     {
       if (this -> blue > 0)
       {
-        this -> drawing_required = true;
         (this -> blue) -= 15;
-        return -15;
+        return true;
       }
       else
-        return 0;
+        return false;
     }
   }
 }
