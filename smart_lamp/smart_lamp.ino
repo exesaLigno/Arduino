@@ -2,36 +2,25 @@
 #include <U8g2lib.h>
 #include <Wire.h>
 #include <SPI.h>
+#include <FastLED.h>
 #include "encoder.hpp"
 #include "menu.hpp"
 
-#define BAR_INDENT 1
+
+#define ENCODER_S1_PIN  4
+#define ENCODER_S2_PIN  3
+#define ENCODER_KEY_PIN 2
 
 
-#define FIRST_ENCODER_S1_PIN  2
-#define FIRST_ENCODER_S2_PIN  3
-#define FIRST_ENCODER_KEY_PIN 4
-#define SECOND_ENCODER_S1_PIN  7
-#define SECOND_ENCODER_S2_PIN  6
-#define SECOND_ENCODER_KEY_PIN 5
+#define LED_PIN 12
+#define CURRENT_LIMIT 400
 
-#define CHECK_S1_1  !digitalRead(FIRST_ENCODER_S1_PIN)
-#define CHECK_S2_1  !digitalRead(FIRST_ENCODER_S2_PIN)
-#define CHECK_KEY_1 !digitalRead(FIRST_ENCODER_KEY_PIN)
-#define CHECK_S1_2  !digitalRead(SECOND_ENCODER_S1_PIN)
-#define CHECK_S2_2  !digitalRead(SECOND_ENCODER_S2_PIN)
-#define CHECK_KEY_2 !digitalRead(SECOND_ENCODER_KEY_PIN)
 
-#define DISPLAY_CLOCK 8
-#define DISPLAY_DATA  9
-#define DISPLAY_CS    10
-#define DISPLAY_RESET 11
+static const int NUM_LEDS_RING = 16;
+static const int NUM_LEDS_SETTINGS_STRIP = 0;
+static const int NUM_LEDS_LAMP = 0;
 
-#define DRAW_MENU                       \
-        if(menu.drawingRequred()){      \
-          menu.drawed();                \
-          draw_menu();                  \
-        }
+#define NUM_LEDS  NUM_LEDS_RING+NUM_LEDS_SETTINGS_STRIP+NUM_LEDS_LAMP
 
 
 enum MODES
@@ -45,168 +34,461 @@ enum MODES
 };
 
 
-U8G2_HX1230_96X68_F_3W_SW_SPI display(U8G2_R0, DISPLAY_CLOCK, DISPLAY_DATA, DISPLAY_CS, DISPLAY_RESET);
-Encoder enc1(FIRST_ENCODER_S1_PIN, FIRST_ENCODER_S2_PIN, FIRST_ENCODER_KEY_PIN);
-Encoder enc2(SECOND_ENCODER_S1_PIN, SECOND_ENCODER_S2_PIN, SECOND_ENCODER_KEY_PIN);
-Setting menu = Setting();
+Encoder encoder(ENCODER_S1_PIN, ENCODER_S2_PIN, ENCODER_KEY_PIN, 10);
+Settings settings = Settings();
 
+CRGB leds[NUM_LEDS];
+CRGB target_leds[NUM_LEDS];
 
+int brightness = 0;
+int color_changing = 0;
 
+unsigned long last_updated = 0;
 
 void setup() 
 {
-  display.begin();
+  //Serial.begin(9600);
+  FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
+  if (CURRENT_LIMIT > 0) FastLED.setMaxPowerInVoltsAndMilliamps(5, CURRENT_LIMIT);
+  FastLED.setBrightness(255);
 }
+
 
 void loop() 
 {
-  int cmd1 = enc1.check();
-  int cmd2 = enc2.check();
+  bool parameter_changed = read_command();
 
-  if (cmd1 == BUTTON)
-    menu.nextLine();
-
-  else if (cmd1 == RIGHT_KEY)
-    menu.nextScreen();
-
-  else if (cmd1 == LEFT_KEY)
-    menu.previousScreen();
-
-  else if (cmd1 == LEFT or cmd1 == RIGHT)
+  if (parameter_changed)
   {
-    if (menu.screen == LAMP or (menu.screen == SPOTLIGHT and menu.line == 0))
-    {
-      if (cmd1 == LEFT)
-        menu.warmthDown();
-      else
-        menu.warmthUp();
-    }
+    if (!settings.parameter_changing)
+      draw_ring(Settings::BRIGHTNESS);
+    else
+      draw_ring(settings.current_line);
+  }
+  
+}
 
-    else if (menu.screen == SPOTLIGHT and menu.line == 1)
+/*
+int set_target_color()
+{
+  color_changing = 15;
+  
+  int temp = (4100 + (menu.warmth * 24));
+  float red = get_red(temp);
+  float green = get_green(temp);
+  float blue = get_blue(temp);
+  
+  for (int counter = 0; counter < NUM_LEDS; counter++)
+  {
+    if (menu.screen == LAMP)
     {
-      if (cmd1 == LEFT)
-        menu.positionDown();
+      target_leds[counter].r = red;
+      target_leds[counter].g = green;
+      target_leds[counter].b = blue;
+    }
+    
+    else if (menu.screen == SPOTLIGHT)
+    {
+      int spotlight_position = ((menu.spotlight_position + 50.0) / 100.0) * (NUM_LEDS - 1);
+
+      if (abs(counter - spotlight_position) <= (SPOTLIGHT_LEDS-1)/2)
+      {
+        target_leds[counter].r = red;
+        target_leds[counter].g = green;
+        target_leds[counter].b = blue;
+      }
+      else if(abs(counter - spotlight_position) <= (SPOTLIGHT_LEDS+3)/2)
+      {
+        target_leds[counter].r = red / (2 * (abs(counter - spotlight_position) - (SPOTLIGHT_LEDS-1)/2));
+        target_leds[counter].g = green / (2 * (abs(counter - spotlight_position) - (SPOTLIGHT_LEDS-1)/2));
+        target_leds[counter].b = blue / (2 * (abs(counter - spotlight_position) - (SPOTLIGHT_LEDS-1)/2));
+      }
       else
-        menu.positionUp();
+      {
+        target_leds[counter].r = 0;
+        target_leds[counter].g = 0;
+        target_leds[counter].b = 0;
+      }
     }
 
     else if (menu.screen == COLOR)
     {
-      if (cmd1 == LEFT)
-        menu.colorDown(menu.line);
-      else
-        menu.colorUp(menu.line);
+      target_leds[counter].r = menu.red;
+      target_leds[counter].g = menu.green;
+      target_leds[counter].b = menu.blue;
+    }
+
+    target_leds[counter].r *= (menu.brightness/100.0);
+    target_leds[counter].g *= (menu.brightness/100.0);
+    target_leds[counter].b *= (menu.brightness/100.0);
+  }  
+}
+*/
+
+
+int draw_ring(int parameter)
+{
+  switch(parameter)
+  {
+    case Settings::BRIGHTNESS:
+    {
+      for (int counter = 0; counter < NUM_LEDS_RING; counter++)
+      {
+        if (counter * 15 < settings.parameters[Settings::BRIGHTNESS])
+        {
+          leds[NUM_LEDS_RING - counter - 1].r = 255 * ((counter + 1.0)/(NUM_LEDS_RING - 0.0));
+          leds[NUM_LEDS_RING - counter - 1].g = 255 * ((counter + 1.0)/(NUM_LEDS_RING - 0.0));
+          leds[NUM_LEDS_RING - counter - 1].b = 255 * ((counter + 1.0)/(NUM_LEDS_RING - 0.0));
+        }
+        else
+        {
+          leds[NUM_LEDS_RING - counter - 1].r = 0;
+          leds[NUM_LEDS_RING - counter - 1].g = 0;
+          leds[NUM_LEDS_RING - counter - 1].b = 0;
+        }
+      }
+      break;
+    }
+
+    case Settings::TEMPERATURE:
+    {
+      leds[0].r = 0;
+      leds[0].g = 0;
+      leds[0].b = 0;
+      leds[NUM_LEDS_RING - 1].r = 0;
+      leds[NUM_LEDS_RING - 1].g = 0;
+      leds[NUM_LEDS_RING - 1].b = 0;
+      for (int counter = 0; counter < NUM_LEDS_RING - 2; counter++)
+      {
+        if (1600 + (counter * 430) <= settings.parameters[Settings::TEMPERATURE])
+        {
+          leds[NUM_LEDS_RING - counter - 2].r = get_red(settings.parameters[parameter]);
+          leds[NUM_LEDS_RING - counter - 2].g = get_green(settings.parameters[parameter]);
+          leds[NUM_LEDS_RING - counter - 2].b = get_blue(settings.parameters[parameter]);
+        }
+        else
+        {
+          leds[NUM_LEDS_RING - counter - 2].r = 0;
+          leds[NUM_LEDS_RING - counter - 2].g = 0;
+          leds[NUM_LEDS_RING - counter - 2].b = 0;
+        }
+      }
+      break;
+    }
+
+    case Settings::SPOTLIGHT:
+    {
+      leds[NUM_LEDS_RING/2].r = 100;
+      leds[NUM_LEDS_RING/2].g = 100;
+      leds[NUM_LEDS_RING/2].b = 100;
+      break;
+    }
+
+    case Settings::COLOR:
+    {
+      leds[NUM_LEDS_RING/2].r = 100;
+      leds[NUM_LEDS_RING/2].g = 0;
+      leds[NUM_LEDS_RING/2].b = 0;
+      break;
+    }
+
+    case Settings::CANDLE:
+    {
+      leds[NUM_LEDS_RING/2].r = 80;
+      leds[NUM_LEDS_RING/2].g = 80;
+      leds[NUM_LEDS_RING/2].b = 0;
+      break;
+    }
+
+    case Settings::AMBIENT:
+    {
+      leds[NUM_LEDS_RING/2].r = 80;
+      leds[NUM_LEDS_RING/2].g = 0;
+      leds[NUM_LEDS_RING/2].b = 80;
+      break;
     }
   }
 
-  if (cmd2 == RIGHT)
-    menu.brightnessUp();
-
-  else if (cmd2 == LEFT)
-    menu.brightnessDown();
-
-  DRAW_MENU;
+  FastLED.show();
 }
 
 
-int draw_menu()
+
+int change_color()
 {
-  display.clearBuffer();
-
-  display.drawLine(0,13,96,13);
-  display.drawLine(0,57,96,57);
-
-  display.setFont(u8g2_font_unifont_t_symbols);
-  display.drawUTF8(4, 71, "☀");
-  display.setFont(u8g2_font_ncenB08_tr);
-  
-  display.drawFrame(20,59,75,9);
-  display.drawBox(21 + BAR_INDENT, 60 + BAR_INDENT, (menu.brightness / 100.0 * (73 - 2*BAR_INDENT)), 7 - 2*BAR_INDENT);
-
-  switch(menu.screen)
+  int divider = color_changing;
+  color_changing--;
+  for (int counter = 0; counter < NUM_LEDS; counter++)
   {
-    case (LAMP):
+    if (color_changing)
     {
-      display.drawStr(32,10,"LAMP");
-      display.drawStr(5, 25, "Warmth");
-      display.drawFrame(4, 28, 88, 10);
-      display.drawBox((46 + menu.warmth/100.0 * (41 - BAR_INDENT)), 29 + BAR_INDENT, 4, 8 - 2*BAR_INDENT);
-      display.setFont(u8g2_font_4x6_tr);
-      display.drawStr(5, 44, "2700K");
-      display.drawStr(72, 44, "6500K");
-      display.setFont(u8g2_font_ncenB08_tr);
-      break;
+      leds[counter].r = leds[counter].r + (target_leds[counter].r - leds[counter].r) / divider;
+      leds[counter].g = leds[counter].g + (target_leds[counter].g - leds[counter].g) / divider;
+      leds[counter].b = leds[counter].b + (target_leds[counter].b - leds[counter].b) / divider;
     }
-
-    case (SPOTLIGHT):
+    else
     {
-      display.drawStr(16, 10, "SPOTLIGHT");
-      if (menu.line == 0)
-      {
-        display.drawStr(5, 25, "Warmth");
-        display.drawFrame(4, 28, 88, 10);
-        display.drawBox((46 + menu.warmth/100.0 * (41 - BAR_INDENT)), 29 + BAR_INDENT, 4, 8 - 2*BAR_INDENT);
-        display.setFont(u8g2_font_4x6_tr);
-        display.drawStr(5, 44, "2700K");
-        display.drawStr(72, 44, "6500K");
-        display.setFont(u8g2_font_ncenB08_tr);
-        display.drawStr(40, 55, "1/2");
-      }
-      
-      else if (menu.line == 1)
-      {
-        display.drawStr(5, 25, "Position");
-        display.drawFrame(4, 28, 88, 10);
-        display.drawBox((44 + menu.spotlight_position/50.0 * (39 - BAR_INDENT)), 29 + BAR_INDENT, 8, 8 - 2*BAR_INDENT);
-        display.drawStr(40, 55, "2/2");
-      }
-      break;
+      leds[counter].r = target_leds[counter].r;
+      leds[counter].g = target_leds[counter].g;
+      leds[counter].b = target_leds[counter].b;
     }
+  }
+  return 0;
+}
 
-    case (COLOR):
+
+float get_red(int temp)
+{
+  float red = 0;
+
+  temp = temp / 100;
+  
+  if (temp <= 66)
+    red = 255;
+
+  else
+  {
+    red = temp - 60;
+    red = 329.698727446 * pow(red, -0.1332047592);
+    if (red < 0) 
+      red = 0;
+    if (red > 255)
+      red = 255;
+  }
+
+  return red;
+}
+
+
+float get_green(int temp)
+{
+  float green = 0;
+
+  temp = temp / 100;
+  
+  if (temp <= 66)
+  {
+    green = temp;
+    green = 99.4708025861 * log(green) - 161.1195681661;
+    if (green < 0) 
+      green = 0;
+    if (green > 255)
+      green = 255;
+  }
+  
+  else
+  {
+    green = temp - 60;
+    green = 288.1221695283 * pow(green, -0.0755148492);
+    if (green < 0) 
+      green = 0;
+    if (green > 255)
+      green = 255;
+  }
+
+  return green;
+}
+
+
+float get_blue(int temp)
+{
+  float blue = 0;
+
+  temp = temp / 100;
+
+  if (temp >= 66)
+    blue = 255;
+  else
+  {
+    if (temp <= 19)
+      blue = 0;
+    else
     {
-      display.drawStr(28, 10, "COLOR");
-      
-      display.drawStr(15, 25, "R");
-      display.drawStr(15, 39, "G");
-      display.drawStr(15, 53, "B");
-      
-      display.drawFrame(25, 16, 70, 10);
-      display.drawFrame(25, 30, 70, 10);
-      display.drawFrame(25, 44, 70, 10);
-
-      display.drawBox(26 + BAR_INDENT, 17 + BAR_INDENT, menu.red / 255.0 * (68 - 2*BAR_INDENT), 8 - 2*BAR_INDENT);
-      display.drawBox(26 + BAR_INDENT, 31 + BAR_INDENT, menu.green / 255.0 * (68 - 2*BAR_INDENT), 8 - 2*BAR_INDENT);
-      display.drawBox(26 + BAR_INDENT, 45 + BAR_INDENT, menu.blue / 255.0 * (68 - 2*BAR_INDENT), 8 - 2*BAR_INDENT);
-
-      display.drawStr(5, 24 + menu.line * 14, ">");
-      
-      break;
-    }
-
-    case (CANDLE):
-    {
-      display.drawStr(24, 10, "CANDLE");
-      display.drawLine(0,13,96,57);
-      display.drawLine(0,57,96,13);
-      break;
-    }
-
-    case (AMBIENT):
-    {
-      display.drawStr(20, 10, "AMBIENT");
-      display.drawStr(5, 35, "Mode:");
-      display.setCursor(50, 35);
-      display.print(menu.ambient_mode + 1);
-      break;
-    }
-
-    default:
-    {
-      display.drawStr(26, 10, "ERROR");
-      break;
+      blue = temp - 10;
+      blue = 138.5177312231 * log(blue) - 305.0447927307;
+      if (blue < 0) 
+        blue = 0;
+      if (blue > 255)
+        blue = 255;
     }
   }
 
-  display.sendBuffer();
+  return blue;
+}
+
+
+bool read_command()
+{
+  int event = encoder.checkEvent();
+
+  bool smth_changed = false;
+
+  if (event == LEFT_RELEASED)
+    smth_changed = settings.changeParameter(Settings::BRIGHTNESS, -1);
+  else if (event == RIGHT_RELEASED)
+    smth_changed = settings.changeParameter(Settings::BRIGHTNESS, 1);
+  else if (event == RIGHT_KEY_PRESSED or event == LEFT_KEY_PRESSED)
+  {
+    settings.parameter_changing = true;
+    smth_changed = true;
+  }
+  else if (event == KEY_RELEASED)
+  {
+    settings.nextMode();
+    present_mode();
+    settings.parameter_changing = false;
+    smth_changed = true;
+  }
+  else if (event == KEY_RELEASED_AFTER_ROTATING)
+  {
+    settings.parameter_changing = false;
+    smth_changed = true;
+  }
+  else if (event == LEFT_KEY_RELEASED)
+  {
+    smth_changed = settings.changeParameter(settings.current_line, -1);
+  }
+  else if (event == RIGHT_KEY_RELEASED)
+  {
+    smth_changed = settings.changeParameter(settings.current_line, 1);
+  }
+  
+  return smth_changed;
+}
+
+
+bool present_mode()
+{
+  switch(settings.current_line)
+  {
+    case Settings::TEMPERATURE:
+    {
+      for (int counter = 0; counter < 20; counter++)
+      {
+        for (int k = 0; k < NUM_LEDS_RING; k++)
+        {
+          leds[k].r = counter * 10;
+          leds[k].g = counter * 10;
+          leds[k].b = counter * 10;
+        }
+        FastLED.show();
+        delay(16);
+      }
+      //delay(190);
+      for (int counter = 19; counter >= 0; counter--)
+      {
+        for (int k = 0; k < NUM_LEDS_RING; k++)
+        {
+          leds[k].r = counter * 10;
+          leds[k].g = counter * 10;
+          leds[k].b = counter * 10;
+        }
+        FastLED.show();
+        delay(16);
+      }
+      break;
+    }
+
+    case Settings::SPOTLIGHT:
+    {
+      for (int counter = 0; counter < NUM_LEDS_RING; counter++)
+      {
+        for (int k = 0; k < NUM_LEDS_RING; k++)
+        {
+          if (k == counter)
+          {
+            leds[k].r = counter * 10;
+            leds[k].g = counter * 10;
+            leds[k].b = counter * 10;
+          }
+          else
+          {
+            leds[k].r = 0;
+            leds[k].g = 0;
+            leds[k].b = 0;
+          }
+        }
+        FastLED.show();
+        delay(20);
+      }
+      for (int counter = NUM_LEDS_RING - 1; counter >= 0; counter--)
+      {
+        for (int k = 0; k < NUM_LEDS_RING; k++)
+        {
+          if (k == counter)
+          {
+            leds[k].r = counter * 10;
+            leds[k].g = counter * 10;
+            leds[k].b = counter * 10;
+          }
+          else
+          {
+            leds[k].r = 0;
+            leds[k].g = 0;
+            leds[k].b = 0;
+          }
+        }
+        FastLED.show();
+        delay(20);
+      }
+      break;
+    }
+
+    case Settings::COLOR:
+    {
+      for (int counter = 0; counter < 20; counter++)
+      {
+        for (int k = 0; k < NUM_LEDS_RING; k++)
+        {
+          leds[k].r = counter * 10;
+          leds[k].g = counter * 10;
+          leds[k].b = counter * 10;
+        }
+        FastLED.show();
+        delay(16);
+      }
+      //delay(190);
+      for (int counter = 19; counter >= 0; counter--)
+      {
+        for (int k = 0; k < NUM_LEDS_RING; k++)
+        {
+          leds[k].r = counter * 10;
+          leds[k].g = counter * 10;
+          leds[k].b = counter * 10;
+        }
+        FastLED.show();
+        delay(16);
+      }
+      break;
+    }
+
+    case Settings::AMBIENT:
+    {
+      for (int counter = 0; counter < 20; counter++)
+      {
+        for (int k = 0; k < NUM_LEDS_RING; k++)
+        {
+          leds[k].r = counter * 10;
+          leds[k].g = counter * 2.5;
+          leds[k].b = counter * 12.5;
+        }
+        FastLED.show();
+        delay(30);
+      }
+      //delay(190);
+      for (int counter = 19; counter >= 0; counter--)
+      {
+        for (int k = 0; k < NUM_LEDS_RING; k++)
+        {
+          leds[k].r = counter * 10;
+          leds[k].g = counter * 2.5;
+          leds[k].b = counter * 12.5;
+        }
+        FastLED.show();
+        delay(30);
+      }
+      break;
+    }
+  }
+  return true;
 }

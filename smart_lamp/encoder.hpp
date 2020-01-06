@@ -16,6 +16,7 @@ enum COMMANDS
   LEFT_FAST_RELEASED = -13,
   RIGHT_FAST_RELEASED = 13,
   KEY_RELEASED = 14,
+  KEY_RELEASED_AFTER_ROTATING = 24,
 
   ERR = 100
 };
@@ -34,14 +35,19 @@ enum cmd
 class Encoder
 {
 private:
+  int cooldown = -1;
+
   int last_command = 0;
-  bool rotated = 0;
+  int rotated = 0;
   int S1 = 0;
   int S2 = 0;
   int KEY = 0;
+  unsigned long last_reading_time = 0;
 
 public:
   Encoder(int S1_PIN, int S2_PIN, int KEY_PIN);
+  Encoder(int S1_PIN, int S2_PIN, int KEY_PIN, int cooldown);
+  
   int checkEvent();
   int check();
 
@@ -55,123 +61,158 @@ Encoder::Encoder(int S1_PIN, int S2_PIN, int KEY_PIN)
   this -> KEY = KEY_PIN;
 }
 
-int Encoder::checkEvent()
+Encoder::Encoder(int S1_PIN, int S2_PIN, int KEY_PIN, int cooldown)
 {
-  bool s1_signal = !digitalRead(this -> S1);
-  bool s2_signal = !digitalRead(this -> S2);
-  bool key_signal = !digitalRead(this -> KEY);
+  this -> S1 = S1_PIN;
+  this -> S2 = S2_PIN;
+  this -> KEY = KEY_PIN;
+  this -> cooldown = cooldown;
+}
 
-  if(key_signal)
+int Encoder::checkEvent() // Доработать обработку обратного срабатывания в конце щелчка (!!!)
+{
+  if (millis() - (this -> last_reading_time) > this -> cooldown)
   {
-    if (s1_signal)
+    bool s1_signal = !digitalRead(this -> S1);
+    bool s2_signal = !digitalRead(this -> S2);
+    bool key_signal = !digitalRead(this -> KEY);
+  
+    if(key_signal)
     {
-      this -> rotated = true;
-      if (this -> last_command == LEFT_KEY_PRESSED or this -> last_command == RIGHT_KEY_PRESSED)
+      if (s1_signal)
+      {
+        this -> rotated = -1;
+        if (this -> last_command == LEFT_KEY_PRESSED or this -> last_command == RIGHT_KEY_PRESSED)
+        {
+          return NOTHING_HAPPENS;
+        }
+        else
+        {
+          this -> last_command = LEFT_KEY_PRESSED;
+          return LEFT_KEY_PRESSED;
+        }
+      }
+  
+      else if (s2_signal)
+      {
+        this -> rotated = 1;
+        if (this -> last_command == LEFT_KEY_PRESSED or this -> last_command == RIGHT_KEY_PRESSED)
+        {
+          return NOTHING_HAPPENS;
+        }
+        else
+        {
+          this -> last_command = RIGHT_KEY_PRESSED;
+          return RIGHT_KEY_PRESSED;
+        }
+      }
+  
+      else
+      {
+        if (this -> last_command == KEY_PRESSED)
+        {
+          this -> last_command = KEY_PRESSED;
+          return NOTHING_HAPPENS;
+        }
+  
+        else if (this -> last_command == LEFT_KEY_PRESSED or this -> last_command == RIGHT_KEY_PRESSED)
+        {
+          int event = this -> last_command;
+          this -> last_command = KEY_PRESSED;
+          if (event == LEFT_KEY_PRESSED)
+            return LEFT_KEY_RELEASED;
+          else
+            return RIGHT_KEY_RELEASED;
+        }
+  
+        else
+        {
+          this -> last_command = KEY_PRESSED;
+          return KEY_PRESSED;
+        }
+      }
+    }
+  
+    else if(s1_signal)
+    {
+      if (this -> last_command == RIGHT_PRESSED or this -> last_command == LEFT_PRESSED)
       {
         return NOTHING_HAPPENS;
       }
+  
       else
       {
-        this -> last_command = LEFT_KEY_PRESSED;
-        return LEFT_KEY_PRESSED;
+        this -> last_command = LEFT_PRESSED;
+        return LEFT_PRESSED;
       }
     }
-
-    else if (s2_signal)
+  
+    else if(s2_signal)
     {
-      this -> rotated = true;
-      if (this -> last_command == LEFT_KEY_PRESSED or this -> last_command == RIGHT_KEY_PRESSED)
+      if (this -> last_command == RIGHT_PRESSED or this -> last_command == LEFT_PRESSED)
       {
         return NOTHING_HAPPENS;
       }
+  
       else
       {
-        this -> last_command = RIGHT_KEY_PRESSED;
-        return RIGHT_KEY_PRESSED;
+        this -> last_command = RIGHT_PRESSED;
+        return RIGHT_PRESSED;
       }
     }
-
+  
     else
     {
-      if (this -> last_command == KEY_PRESSED or this -> last_command == LEFT_KEY_PRESSED or this -> last_command == RIGHT_KEY_PRESSED)
+      if (this -> last_command == KEY_PRESSED)
       {
-        this -> last_command = KEY_PRESSED;
+        if (!(this -> rotated))
+        {
+          this -> last_command = NOTHING_HAPPENS;
+          return KEY_RELEASED;
+        }
+        else
+        {
+          this -> last_command = NOTHING_HAPPENS;
+          this -> rotated = 0;
+          return KEY_RELEASED_AFTER_ROTATING;
+        }
+      }
+  
+      else if (this -> last_command == LEFT_PRESSED)
+      {
+        this -> last_command = NOTHING_HAPPENS;
+        return LEFT_RELEASED;
+      }
+  
+      else if (this -> last_command == RIGHT_PRESSED)
+      {
+        this -> last_command = NOTHING_HAPPENS;
+        return RIGHT_RELEASED;
+      }
+  
+      else if (this -> last_command == LEFT_KEY_PRESSED)
+      {
+        this -> last_command = NOTHING_HAPPENS;
+        return LEFT_KEY_RELEASED;
+      }
+  
+      else if (this -> last_command == RIGHT_KEY_PRESSED)
+      {
+        this -> last_command = NOTHING_HAPPENS;
+        return RIGHT_KEY_RELEASED;
+      }
+  
+      else
+      {
         return NOTHING_HAPPENS;
       }
-
-      else
-      {
-        this -> last_command = KEY_PRESSED;
-        return KEY_PRESSED;
-      }
     }
-  }
-
-  else if(s1_signal)
-  {
-    if (this -> last_command == RIGHT_PRESSED or this -> last_command == LEFT_PRESSED)
-    {
-      return NOTHING_HAPPENS;
-    }
-
-    else
-    {
-      this -> last_command = LEFT_PRESSED;
-      return LEFT_PRESSED;
-    }
-  }
-
-  else if(s2_signal)
-  {
-    if (this -> last_command == RIGHT_PRESSED or this -> last_command == LEFT_PRESSED)
-    {
-      return NOTHING_HAPPENS;
-    }
-
-    else
-    {
-      this -> last_command = RIGHT_PRESSED;
-      return RIGHT_PRESSED;
-    }
+  
+    this -> last_reading_time = millis();
   }
 
   else
-  {
-    if (this -> last_command == KEY_PRESSED)
-    {
-      this -> last_command = NOTHING_HAPPENS;
-      return KEY_RELEASED;
-    }
-
-    else if (this -> last_command == LEFT_PRESSED)
-    {
-      this -> last_command = NOTHING_HAPPENS;
-      return LEFT_RELEASED;
-    }
-
-    else if (this -> last_command == RIGHT_PRESSED)
-    {
-      this -> last_command = NOTHING_HAPPENS;
-      return RIGHT_RELEASED;
-    }
-
-    else if (this -> last_command == LEFT_KEY_PRESSED)
-    {
-      this -> last_command = NOTHING_HAPPENS;
-      return LEFT_KEY_RELEASED;
-    }
-
-    else if (this -> last_command == RIGHT_KEY_PRESSED)
-    {
-      this -> last_command = NOTHING_HAPPENS;
-      return RIGHT_KEY_RELEASED;
-    }
-
-    else
-    {
-      return NOTHING_HAPPENS;
-    }
-  }
+    return NOTHING_HAPPENS;
 }
 
 
