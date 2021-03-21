@@ -17,11 +17,10 @@
  *    SCB -> D10
  *    SDO -> D12
  *    
- * ENCODER
+ * TOUCH KEY
  *    5V -> 5V
- *    KEY -> D9
- *    S1 -> D3
- *    S2 -> D2
+ *    GND -> GND
+ *    KEY -> D2
  */
 
 
@@ -44,10 +43,8 @@
 #define DISPLAY_CS    7   // CE pin on display
 #define DISPLAY_RESET 8   // RST pin on display
 
-// define pins for encoder    (5V -> 5V, GND -> GND)
-#define ENCODER_KEY 9       // KEY pin on encoder
-#define ENCODER_S1  3       // S1 pin on sensor (Left rotation)
-#define ENCODER_S2  2       // S2 pin on sensor (Right rotation)
+// define pins for key   (5V -> 5V, GND -> GND)
+#define TOUCH_KEY 2
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 
@@ -57,9 +54,8 @@ U8G2_HX1230_96X68_F_3W_SW_SPI display(U8G2_R0, DISPLAY_CLOCK, DISPLAY_DATA, DISP
 
 void sensorError();
 void drawFrame(int frame);
-int checkEncoder();
+int checkKey();
 int next(int frame);
-int prev(int frame);
 
 
 int FrameNumber = 0;
@@ -70,6 +66,7 @@ int SensorError = 0;
 void setup(void) 
 {
   display.begin();
+  Serial.begin(9600);
 
   bool status;
   status = sensor.begin();
@@ -81,17 +78,18 @@ void setup(void)
 void loop(void) 
 {
   int frame = FrameNumber;
-  int command = checkEncoder();
-  if(command == 1) FrameNumber = next(FrameNumber);
-  if(command == -1) FrameNumber = prev(FrameNumber);
-  if((frame != FrameNumber) or (Time_from_last_update > 10000) or (command == 2))
+  int command = checkKey();
+  
+  if (command == 1) FrameNumber = next(FrameNumber);
+  
+  if ((frame != FrameNumber) or (Time_from_last_update > 1000))
   {
     Time_from_last_update = 0;
-    frame = FrameNumber;
-    drawFrame(frame);
+    drawFrame(FrameNumber);
+    Serial.println(Time_from_last_update);
   }
-  if (command == 2) delay(500);
-  else delay(1);
+  
+  delay(1);
   Time_from_last_update++;
 }
 
@@ -164,24 +162,17 @@ void drawFrame(int frame)
 }
 
 
-int checkEncoder()
+int checkKey()
 {
-  int encoder_command = 0;
+  int command = 0;
   
-  if(!digitalRead(ENCODER_S1))
+  if(digitalRead(TOUCH_KEY))
   {
-    encoder_command = -1;
-    while(!digitalRead(ENCODER_S1));
-  }
-  else if(!digitalRead(ENCODER_S2))
-  {
-    encoder_command = 1;
-    while(!digitalRead(ENCODER_S2));
+    command = 1;
+    while(digitalRead(TOUCH_KEY));
   }
 
-  if(!digitalRead(ENCODER_KEY)) encoder_command = 2;
-
-  return encoder_command;
+  return command;
 }
 
 
@@ -189,14 +180,6 @@ int next(int frame)
 {
   int NewFrame = frame + 1;
   if(NewFrame > 3) NewFrame = 0;
-  return NewFrame;
-}
-
-
-int prev(int frame)
-{
-  int NewFrame = frame - 1;
-  if(NewFrame < 0) NewFrame = 3;
   return NewFrame;
 }
 
